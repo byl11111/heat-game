@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>配置导出 / Bake Settings</title>
+  <style>
+    :root{font-family:Arial,"Microsoft YaHei",sans-serif;color:#302722;background:#fff8f2}
+    body{margin:0;padding:28px;display:grid;place-items:start center}
+    main{width:min(980px,100%);display:grid;gap:16px}
+    h1{margin:0;color:#c84f37}
+    p{margin:0;line-height:1.65}
+    .card{background:#fff;border:1px solid rgba(198,84,58,.22);border-radius:12px;padding:18px;box-shadow:0 14px 30px rgba(72,42,31,.08)}
+    .actions{display:flex;flex-wrap:wrap;gap:10px}
+    button,a.button{border:0;border-radius:999px;padding:10px 16px;background:#c6543a;color:#fff;font-weight:800;text-decoration:none;cursor:pointer}
+    button.secondary{background:#f2ded2;color:#6a3a2c}
+    textarea{width:100%;min-height:420px;box-sizing:border-box;border:1px solid rgba(198,84,58,.28);border-radius:10px;padding:12px;font:13px/1.5 Consolas,monospace;background:#fffdf9;color:#2e2724}
+    code{background:#fff1e8;color:#b9432d;border-radius:5px;padding:2px 6px}
+    .status{font-weight:800;color:#2f6d43}
+    ul{margin:8px 0 0 22px;line-height:1.6}
+  </style>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h1>配置导出</h1>
+    <p>这个页面会读取当前网址来源下的浏览器本地配置，把“新手关台词/次数、器官字幕、结算页人物、真实案例图片和看板布局”转换成可写死进代码的 <code>baked-settings.js</code>。</p>
+    <p>注意：必须用你当时调试游戏的同一个来源打开。例如你在 <code>http://localhost:8099/index.html</code> 调的，就用 <code>http://localhost:8099/settings-export.html</code> 打开。</p>
+  </section>
+
+  <section class="card">
+    <div class="actions">
+      <button type="button" id="refresh">重新读取</button>
+      <button type="button" id="copy">复制 JS 内容</button>
+      <button type="button" id="download">下载 baked-settings.js</button>
+      <a class="button secondary" href="index.html">返回游戏</a>
+      <a class="button secondary" href="case-archive-portrait.html">真实案例页</a>
+    </div>
+    <p id="status" class="status"></p>
+  </section>
+
+  <section class="card">
+    <p>已读取到的配置项：</p>
+    <ul id="summary"></ul>
+  </section>
+
+  <section class="card">
+    <textarea id="output" spellcheck="false"></textarea>
+  </section>
+</main>
+
+<script>
+  const keyMap = {
+    tutorialTexts: 'heatdome_tuto_texts',
+    tutorialFlow: 'heat-tutorial-flow-v1',
+    tutorialOrganLabels: 'heat-tutorial-organ-labels-v1',
+    tutorialOrganLabelPositions: 'heat-tutorial-organ-label-positions-v1',
+    settlementPlayer: 'heat-settlement-player-v2',
+    archiveImages: 'archiveImageMap',
+    caseLayout: 'caseArchiveLayoutDirectorV1',
+    caseFrames: 'caseArchiveFrameDirectorV2'
+  };
+
+  const emptySettings = {
+    tutorialTexts: {},
+    tutorialFlow: null,
+    tutorialOrganLabels: {},
+    tutorialOrganLabelPositions: {},
+    settlementPlayer: null,
+    archiveImages: {},
+    caseLayout: {},
+    caseFrames: {}
+  };
+
+  function readJson(key, fallback) {
+    try {
+      const value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : fallback;
+    } catch (err) {
+      return fallback;
+    }
+  }
+
+  function collectSettings() {
+    const settings = Object.assign({}, emptySettings);
+    Object.keys(keyMap).forEach(name => {
+      settings[name] = readJson(keyMap[name], emptySettings[name]);
+    });
+    return settings;
+  }
+
+  function toJs(settings) {
+    return 'window.HEAT_GAME_BAKED_SETTINGS = ' + JSON.stringify(settings, null, 2) + ';\n';
+  }
+
+  function summarize(settings) {
+    const rows = [
+      ['新手逐步台词', settings.tutorialTexts && Object.keys(settings.tutorialTexts).length],
+      ['新手台词次数/流程', settings.tutorialFlow ? `${settings.tutorialFlow.count || 10} 次，${(settings.tutorialFlow.entries || []).length} 条` : '未设置'],
+      ['器官字幕', settings.tutorialOrganLabels && Object.keys(settings.tutorialOrganLabels).length],
+      ['器官字幕位置', settings.tutorialOrganLabelPositions && Object.keys(settings.tutorialOrganLabelPositions).length],
+      ['结算页人物', settings.settlementPlayer ? JSON.stringify(settings.settlementPlayer) : '未设置'],
+      ['真实案例图片映射', settings.archiveImages && Object.keys(settings.archiveImages).length],
+      ['案例页整体滑杆', settings.caseLayout && Object.keys(settings.caseLayout).length],
+      ['案例页看板位置/尺寸', settings.caseFrames && Object.keys(settings.caseFrames).length]
+    ];
+    document.getElementById('summary').innerHTML = rows.map(([name, value]) => `<li>${name}：${value || '未设置'}</li>`).join('');
+  }
+
+  function render() {
+    const settings = collectSettings();
+    document.getElementById('output').value = toJs(settings);
+    summarize(settings);
+    document.getElementById('status').textContent = '读取完成：' + new Date().toLocaleString();
+  }
+
+  document.getElementById('refresh').addEventListener('click', render);
+  document.getElementById('copy').addEventListener('click', async () => {
+    const text = document.getElementById('output').value;
+    try {
+      await navigator.clipboard.writeText(text);
+      document.getElementById('status').textContent = '已复制 JS 内容。把它发给 Codex，或保存为 baked-settings.js。';
+    } catch (err) {
+      document.getElementById('output').select();
+      document.getElementById('status').textContent = '浏览器不允许自动复制，请手动复制文本框内容。';
+    }
+  });
+  document.getElementById('download').addEventListener('click', () => {
+    const blob = new Blob([document.getElementById('output').value], { type: 'text/javascript;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'baked-settings.js';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  render();
+</script>
+</body>
+</html>
